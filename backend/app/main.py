@@ -85,9 +85,10 @@ def create_monitor(payload: MonitorCreate) -> MonitorOut:
     )
 
 
-@app.post("/unsubscribe", status_code=204)
-def unsubscribe(payload: UnsubscribeRequest) -> None:
+@app.post("/unsubscribe")
+def unsubscribe(payload: UnsubscribeRequest) -> dict[str, bool]:
     db.delete_monitor_by_endpoint(payload.endpoint)
+    return {"ok": True}
 
 
 @app.post("/debug/test-push")
