@@ -187,9 +187,8 @@ def analyze(
             closing_px_per_min = float(np.dot(motion, unit_t)) / dt_min
             if closing_px_per_min > 0:
                 approaching = True
-                # ETA até a BORDA da célula tocar o alvo (desconta o raio de alerta).
-                edge_px = max(0.0, norm_t - (alert_radius_km / KM_PER_PIXEL))
-                eta_minutes = round(edge_px / closing_px_per_min, 1)
+                # ETA = tempo até a chuva chegar na LOCALIZAÇÃO do usuário (o centro).
+                eta_minutes = round(norm_t / closing_px_per_min, 1)
 
         # Chave de dedup: setor de rumo (30°) + faixa de distância (20 km).
         cell_key = f"{level}:{int(bearing // 30)}:{int(distance_km // 20)}"

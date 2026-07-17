@@ -49,7 +49,9 @@ def process_monitor(monitor: dict) -> None:
     }
 
     active = db.get_active_alerts(monitor["id"])
-    approaching = [c for c in result.cells if c.approaching]
+    # Só alerta para células que se aproximam E já estão dentro do raio de alerta
+    # configurado pelo usuário.
+    approaching = [c for c in result.cells if c.approaching and c.distance_km <= radius]
     seen_keys: list[str] = []
 
     for cell in approaching:
