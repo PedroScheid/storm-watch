@@ -112,6 +112,17 @@ def _latlon_to_scan_angle(lat_deg: float, lon_deg: float) -> tuple[float, float]
     return float(x), float(y)
 
 
+def _clean_rate(sub) -> np.ndarray:
+    """Converte um recorte do netCDF em mm/h limpo: sem máscara, sem fill, ≥ 0.
+
+    Pixels sem dado (fora do disco, _FillValue como 65535, NaN, negativos ou
+    absurdamente altos) viram 0. Valores válidos ficam na escala real (mm/h).
+    """
+    arr = np.ma.filled(np.ma.masked_invalid(sub), 0.0).astype("float32")
+    arr[(arr < 0.0) | (arr >= 1000.0)] = 0.0   # 1000 mm/h é fisicamente impossível => fill
+    return arr
+
+
 def load_crop(
     key: str, lat: float, lon: float, radius_km: float
 ) -> RainField:
@@ -141,13 +152,14 @@ def load_crop(
         iy = int(np.argmin(np.abs(y - cy)))
 
         var = ds.variables["RRQPE"]  # (y, x) em mm/h
+        var.set_auto_maskandscale(True)   # aplica scale_factor/add_offset e mascara _FillValue
         ny, nx = int(var.shape[0]), int(var.shape[1])
         y0, y1 = max(0, iy - half), min(ny, iy + half)
         x0, x1 = max(0, ix - half), min(nx, ix + half)
 
-        # Lê SÓ a janela do disco (netCDF faz o slicing sem trazer o resto).
-        crop = np.array(var[y0:y1, x0:x1], dtype="float32")
-        crop = np.ma.filled(crop, 0.0)
+        # Lê SÓ a janela do disco (netCDF faz o slicing sem trazer o resto),
+        # preenche pixels sem dado com 0 e descarta valores inválidos/fill.
+        crop = _clean_rate(var[y0:y1, x0:x1])
     finally:
         ds.close()
 
@@ -187,7 +199,9 @@ def diagnostics(lat: float, lon: float, radius_km: float = 120.0) -> dict:
     ds = netCDF4.Dataset("inmem", memory=data)
     try:
         var = ds.variables["RRQPE"]
-        full = np.ma.filled(np.array(var[:], dtype="float32"), 0.0)
+        var.set_auto_maskandscale(True)
+        attrs = {k: str(getattr(var, k)) for k in var.ncattrs()}
+        full = _clean_rate(var[:])
         x = np.array(ds.variables["x"][:], dtype="float64")
         y = np.array(ds.variables["y"][:], dtype="float64")
 
@@ -206,14 +220,15 @@ def diagnostics(lat: float, lon: float, radius_km: float = 120.0) -> dict:
         return {
             "frame_time": (_parse_scan_time(key) or dt.datetime.now(dt.timezone.utc)).isoformat(),
             "grid_shape": [int(full.shape[0]), int(full.shape[1])],
+            "var_dtype": str(var.dtype),
+            "var_units": attrs.get("units", "?"),
+            "var_scale_factor": attrs.get("scale_factor", "?"),
+            "var_add_offset": attrs.get("add_offset", "?"),
+            "var_fill_value": attrs.get("_FillValue", "?"),
             "global_max_mmh": round(gmax, 2),
             "global_pixels_ge_2p5": int((full >= 2.5).sum()),
             "global_argmax_index": [giy, gix],
             "target_index": [ciy, cix],
-            "target_scan_angle": [round(cx, 6), round(cy, 6)],
-            "x_range": [round(float(x.min()), 6), round(float(x.max()), 6)],
-            "y_range": [round(float(y.min()), 6), round(float(y.max()), 6)],
-            "crop_shape": [int(crop.shape[0]), int(crop.shape[1])],
             "crop_max_mmh": round(float(crop.max()) if crop.size else 0.0, 2),
             "crop_pixels_ge_2p5": int((crop >= 2.5).sum()),
         }
