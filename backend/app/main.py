@@ -111,6 +111,13 @@ def debug_test_push() -> dict[str, int]:
     return {"monitors": len(monitors), "sent": sent}
 
 
+@app.get("/debug/frame-stats")
+def debug_frame_stats(lat: float, lon: float, radius_km: float = 120.0) -> dict:
+    """Diagnóstico do pipeline GOES: valores brutos de chuva no quadro e na janela."""
+    from .goes import fetcher
+    return fetcher.diagnostics(lat, lon, radius_km)
+
+
 @app.get("/nowcast", response_model=NowcastOut)
 def get_nowcast(lat: float, lon: float, min_intensity: str = "moderada",
                 alert_radius_km: float = 50.0) -> NowcastOut:

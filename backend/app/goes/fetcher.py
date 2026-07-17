@@ -168,3 +168,54 @@ def load_recent_fields(
     fields = [load_crop(k, lat, lon, radius_km) for k in keys]
     fields.sort(key=lambda f: f.timestamp)
     return fields
+
+
+def diagnostics(lat: float, lon: float, radius_km: float = 120.0) -> dict:
+    """Diagnóstico: lê o quadro mais recente por inteiro e compara com a janela.
+
+    Ajuda a distinguir problema de LEITURA (máximo global 0 → escala/variável errada)
+    de problema de NAVEGAÇÃO (máximo global alto, mas janela sempre 0 → índice errado).
+    """
+    import netCDF4
+
+    keys = list_recent_keys(n=1)
+    if not keys:
+        return {"error": "nenhum arquivo GOES encontrado"}
+    key = keys[-1]
+
+    data = _download_nc(key)
+    ds = netCDF4.Dataset("inmem", memory=data)
+    try:
+        var = ds.variables["RRQPE"]
+        full = np.ma.filled(np.array(var[:], dtype="float32"), 0.0)
+        x = np.array(ds.variables["x"][:], dtype="float64")
+        y = np.array(ds.variables["y"][:], dtype="float64")
+
+        gmax = float(full.max())
+        giy, gix = (int(v) for v in np.unravel_index(int(np.argmax(full)), full.shape))
+
+        cx, cy = _latlon_to_scan_angle(lat, lon)
+        cix = int(np.argmin(np.abs(x - cx)))
+        ciy = int(np.argmin(np.abs(y - cy)))
+
+        half = int(radius_km * 0.5)
+        y0, y1 = max(0, ciy - half), min(full.shape[0], ciy + half)
+        x0, x1 = max(0, cix - half), min(full.shape[1], cix + half)
+        crop = full[y0:y1, x0:x1]
+
+        return {
+            "frame_time": (_parse_scan_time(key) or dt.datetime.now(dt.timezone.utc)).isoformat(),
+            "grid_shape": [int(full.shape[0]), int(full.shape[1])],
+            "global_max_mmh": round(gmax, 2),
+            "global_pixels_ge_2p5": int((full >= 2.5).sum()),
+            "global_argmax_index": [giy, gix],
+            "target_index": [ciy, cix],
+            "target_scan_angle": [round(cx, 6), round(cy, 6)],
+            "x_range": [round(float(x.min()), 6), round(float(x.max()), 6)],
+            "y_range": [round(float(y.min()), 6), round(float(y.max()), 6)],
+            "crop_shape": [int(crop.shape[0]), int(crop.shape[1])],
+            "crop_max_mmh": round(float(crop.max()) if crop.size else 0.0, 2),
+            "crop_pixels_ge_2p5": int((crop >= 2.5).sum()),
+        }
+    finally:
+        ds.close()
