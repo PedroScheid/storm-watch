@@ -115,33 +115,41 @@ def _latlon_to_scan_angle(lat_deg: float, lon_deg: float) -> tuple[float, float]
 def load_crop(
     key: str, lat: float, lon: float, radius_km: float
 ) -> RainField:
-    """Baixa um arquivo RRQPEF e recorta uma janela em torno de (lat, lon)."""
+    """Baixa um arquivo RRQPEF e recorta uma janela em torno de (lat, lon).
+
+    Lê apenas a janela desejada direto do disco (fatiamento preguiçoso do netCDF),
+    sem carregar o Full Disk inteiro (~117 MB) na memória — essencial para rodar em
+    VMs pequenas (ex.: Oracle E2.1.Micro, 1 GB de RAM).
+    """
     import netCDF4  # import tardio: pesado e opcional em ambiente de teste
 
     data = _download_nc(key)
     ds = netCDF4.Dataset("inmem", memory=data)
     try:
-        rate = np.array(ds.variables["RRQPE"][:], dtype="float32")  # (y, x) em mm/h
-        rate = np.ma.filled(rate, 0.0)
+        # Vetores de coordenadas (1D, pequenos) — só para localizar o centro.
         x = np.array(ds.variables["x"][:], dtype="float64")  # ângulos de varredura (rad)
         y = np.array(ds.variables["y"][:], dtype="float64")
         scan = _parse_scan_time(key) or dt.datetime.now(dt.timezone.utc)
+
+        cx, cy = _latlon_to_scan_angle(lat, lon)
+
+        # 1 pixel = 2 km. Converte o raio em número de pixels na grade.
+        px_per_km = 1.0 / 2.0
+        half = int(radius_km * px_per_km)
+
+        ix = int(np.argmin(np.abs(x - cx)))
+        iy = int(np.argmin(np.abs(y - cy)))
+
+        var = ds.variables["RRQPE"]  # (y, x) em mm/h
+        ny, nx = int(var.shape[0]), int(var.shape[1])
+        y0, y1 = max(0, iy - half), min(ny, iy + half)
+        x0, x1 = max(0, ix - half), min(nx, ix + half)
+
+        # Lê SÓ a janela do disco (netCDF faz o slicing sem trazer o resto).
+        crop = np.array(var[y0:y1, x0:x1], dtype="float32")
+        crop = np.ma.filled(crop, 0.0)
     finally:
         ds.close()
-
-    cx, cy = _latlon_to_scan_angle(lat, lon)
-
-    # 1 pixel = 2 km. Converte o raio em número de pixels na grade.
-    px_per_km = 1.0 / 2.0
-    half = int(radius_km * px_per_km)
-
-    ix = int(np.argmin(np.abs(x - cx)))
-    iy = int(np.argmin(np.abs(y - cy)))
-
-    y0, y1 = max(0, iy - half), min(rate.shape[0], iy + half)
-    x0, x1 = max(0, ix - half), min(rate.shape[1], ix + half)
-
-    crop = rate[y0:y1, x0:x1]
 
     # Latitudes/longitudes aproximadas do recorte (grade pequena ~ linear).
     lat_span = radius_km / 111.0

@@ -6,18 +6,14 @@ services:
     name: stormwatch-api
     runtime: python
     region: oregon            # us-west; para latência menor no Brasil, avalie outra região
-    plan: starter             # o worker roda dentro do processo (lifespan), então precisa de plano que não durma
+    plan: free                # gratuito para estudos/testes (dorme após inatividade; sem disco persistente)
     rootDir: backend
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
-    disk:
-      name: stormwatch-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: DATABASE_PATH
-        value: /var/data/stormwatch.db
+        value: ./data/stormwatch.db   # efêmero no plano free (reinicia a cada deploy) — ok para testar
       - key: GOES_BUCKET
         value: noaa-goes19
       - key: GOES_PRODUCT

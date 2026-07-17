@@ -1,0 +1,12 @@
+# Exemplo de configuração do Cloudflare Tunnel na VM.
+# Salve como ~/.cloudflared/config.yml (troque os valores marcados).
+
+tunnel: COLE_AQUI_O_TUNNEL_ID
+credentials-file: /home/ubuntu/.cloudflared/COLE_AQUI_O_TUNNEL_ID.json
+
+ingress:
+  # Hostname público (precisa de um domínio na sua conta Cloudflare).
+  - hostname: api.SEUDOMINIO.com
+    service: http://127.0.0.1:8000
+  # Regra final obrigatória.
+  - service: http_status:404
