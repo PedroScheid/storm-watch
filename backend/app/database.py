@@ -11,7 +11,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from .config import get_settings
 
@@ -29,16 +29,14 @@ CREATE TABLE IF NOT EXISTS monitors (
     UNIQUE(push_endpoint)
 );
 
--- Estado de alertas ativos, para deduplicar e permitir cancelamento
--- quando uma célula muda de direção e deixa de ameaçar o local.
-CREATE TABLE IF NOT EXISTS active_alerts (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    monitor_id    INTEGER NOT NULL,
-    cell_key      TEXT    NOT NULL,     -- identidade aproximada da célula de chuva
-    intensity     TEXT    NOT NULL,
-    eta_minutes   REAL    NOT NULL,
-    notified_at   REAL    NOT NULL,
-    UNIQUE(monitor_id, cell_key),
+-- Estado de alerta POR LOCAL (uma ameaça por vez). Evita flood: só notificamos
+-- na entrada da chuva, num agravamento de intensidade, ou quando ela passa.
+CREATE TABLE IF NOT EXISTS alert_state (
+    monitor_id    INTEGER PRIMARY KEY,
+    level         TEXT,               -- moderada|forte|muito_forte; NULL = sem ameaça
+    eta_minutes   REAL,
+    clear_cycles  INTEGER NOT NULL DEFAULT 0,  -- ciclos seguidos sem ameaça (p/ cancelar com folga)
+    updated_at    REAL    NOT NULL,
     FOREIGN KEY(monitor_id) REFERENCES monitors(id) ON DELETE CASCADE
 );
 """
@@ -111,47 +109,28 @@ def delete_monitor_by_endpoint(endpoint: str) -> None:
         conn.commit()
 
 
-# ─── Alertas ativos (dedup / cancelamento) ─────────────────────────────
+# ─── Estado de alerta por local ────────────────────────────────────────
 
-def get_active_alerts(monitor_id: int) -> dict[str, dict[str, Any]]:
+def get_alert_state(monitor_id: int) -> dict[str, Any] | None:
     with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM active_alerts WHERE monitor_id = ?", (monitor_id,)
-        ).fetchall()
-        return {r["cell_key"]: dict(r) for r in rows}
+        row = conn.execute(
+            "SELECT * FROM alert_state WHERE monitor_id = ?", (monitor_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
-def record_alert(monitor_id: int, cell_key: str, intensity: str, eta_minutes: float) -> None:
+def set_alert_state(
+    monitor_id: int, level: str | None, eta_minutes: float | None, clear_cycles: int
+) -> None:
     with _connect() as conn:
         conn.execute(
             """
-            INSERT INTO active_alerts (monitor_id, cell_key, intensity, eta_minutes, notified_at)
+            INSERT INTO alert_state (monitor_id, level, eta_minutes, clear_cycles, updated_at)
             VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(monitor_id, cell_key) DO UPDATE SET
-                intensity=excluded.intensity, eta_minutes=excluded.eta_minutes,
-                notified_at=excluded.notified_at
+            ON CONFLICT(monitor_id) DO UPDATE SET
+                level=excluded.level, eta_minutes=excluded.eta_minutes,
+                clear_cycles=excluded.clear_cycles, updated_at=excluded.updated_at
             """,
-            (monitor_id, cell_key, intensity, eta_minutes, time.time()),
+            (monitor_id, level, eta_minutes, clear_cycles, time.time()),
         )
         conn.commit()
-
-
-def clear_alerts_except(monitor_id: int, keep_cell_keys: Iterable[str]) -> list[dict[str, Any]]:
-    """Remove alertas ativos cujas células não estão mais ameaçando.
-
-    Retorna os alertas removidos (para eventual notificação de cancelamento).
-    """
-    keep = set(keep_cell_keys)
-    with _connect() as conn:
-        rows = conn.execute(
-            "SELECT * FROM active_alerts WHERE monitor_id = ?", (monitor_id,)
-        ).fetchall()
-        removed = [dict(r) for r in rows if r["cell_key"] not in keep]
-        if removed:
-            placeholders = ",".join("?" for _ in removed)
-            ids = [r["id"] for r in removed]
-            conn.execute(
-                f"DELETE FROM active_alerts WHERE id IN ({placeholders})", ids
-            )
-            conn.commit()
-        return removed

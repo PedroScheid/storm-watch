@@ -37,6 +37,18 @@ def build_message(intensity: str, eta_minutes: Optional[float], peak_mmh: float)
     return {"title": title, "body": body, "tag": intensity}
 
 
+def build_escalation_message(intensity: str, eta_minutes: Optional[float], peak_mmh: float) -> dict[str, str]:
+    """Mensagem de agravamento: a chuva já avisada ficou mais intensa."""
+    label = _LABELS.get(intensity, intensity)
+    if eta_minutes is None or eta_minutes <= 1:
+        body = f"A chuva está piorando: agora {label}, chegando agora."
+    else:
+        body = f"A chuva está piorando: agora {label}. ETA: {int(round(eta_minutes))} min."
+    if intensity == "muito_forte" and peak_mmh >= 80:
+        body += " Possível granizo — proteja veículos e objetos expostos."
+    return {"title": "⛈️ StormWatch", "body": body, "tag": "escalate"}
+
+
 def build_cancel_message() -> dict[str, str]:
     return {
         "title": "🌤️ StormWatch",
