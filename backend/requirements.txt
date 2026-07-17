@@ -1,0 +1,20 @@
+# API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Web Push
+pywebpush==2.0.0
+py-vapid==1.9.1
+
+# Satélite GOES / dados
+boto3==1.35.90            # acesso S3 anônimo ao bucket noaa-goes19
+botocore==1.35.90
+netCDF4==1.7.2            # leitura dos arquivos RRQPEF (.nc)
+numpy==2.2.1
+opencv-python-headless==4.10.0.84   # fluxo óptico / detecção de células
+
+# Utilidades
+python-dotenv==1.0.1
+httpx==0.28.1

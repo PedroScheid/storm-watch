@@ -1,0 +1,41 @@
+# Render Blueprint — backend StormWatch (FastAPI + worker).
+# Faça deploy conectando o repositório em https://render.com e apontando para este arquivo.
+
+services:
+  - type: web
+    name: stormwatch-api
+    runtime: python
+    region: oregon            # us-west; para latência menor no Brasil, avalie outra região
+    plan: starter             # o worker roda dentro do processo (lifespan), então precisa de plano que não durma
+    rootDir: backend
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    disk:
+      name: stormwatch-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/stormwatch.db
+      - key: GOES_BUCKET
+        value: noaa-goes19
+      - key: GOES_PRODUCT
+        value: ABI-L2-RRQPEF
+      - key: GOES_REGION
+        value: us-east-1
+      - key: POLL_INTERVAL_SECONDS
+        value: "300"
+      - key: FRAMES_FOR_MOTION
+        value: "3"
+      - key: ANALYSIS_RADIUS_KM
+        value: "120"
+      - key: VAPID_SUBJECT
+        value: mailto:contato@stormwatch.app
+      - key: CORS_ORIGINS
+        value: "https://stormwatch.pages.dev"
+      # Definir no painel (secretos), NÃO commitar:
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
