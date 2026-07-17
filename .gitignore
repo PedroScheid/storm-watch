@@ -11,6 +11,12 @@ venv/
 *.env
 !.env.example
 
+# Chaves SSH / privadas — NUNCA versionar
+*.key
+*.pem
+id_rsa*
+*.ppk
+
 # Banco de dados local
 *.db
 *.sqlite
